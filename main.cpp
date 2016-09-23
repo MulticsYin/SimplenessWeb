@@ -1,3 +1,6 @@
+/*使用线程池实现的并发服务器。
+ * 在AboutHTTP文件夹里有使用有限状态机实现的一个HTTP请求的服务器*/
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -51,8 +54,10 @@ int main( int argc, char* argv[] )
     const char* ip = argv[1];
     int port = atoi( argv[2] );
 
+    /*忽略SIGPIPE信号*/
     addsig( SIGPIPE, SIG_IGN );
 
+    /*创建线程池*/
     threadpool< http_conn >* pool = NULL;
     try
     {
@@ -63,6 +68,7 @@ int main( int argc, char* argv[] )
         return 1;
     }
 
+    /*预先为每个可能的客户连接分配一个http_conn对象*/
     http_conn* users = new http_conn[ MAX_FD ];
     assert( users );
     int user_count = 0;
@@ -118,15 +124,18 @@ int main( int argc, char* argv[] )
                     show_error( connfd, "Internal server busy" );
                     continue;
                 }
-                
+            
+                /*初始化客户连接*/
                 users[connfd].init( connfd, client_address );
             }
             else if( events[i].events & ( EPOLLRDHUP | EPOLLHUP | EPOLLERR ) )
             {
+                /*如果有异常，直接关闭客户连接*/
                 users[sockfd].close_conn();
             }
             else if( events[i].events & EPOLLIN )
             {
+                /*根据读的结果，决定是将任务添加到线程池，还是关闭连接*/
                 if( users[sockfd].read() )
                 {
                     pool->append( users + sockfd );
@@ -138,6 +147,7 @@ int main( int argc, char* argv[] )
             }
             else if( events[i].events & EPOLLOUT )
             {
+                /*根据写的结果，决定是否关闭连接*/
                 if( !users[sockfd].write() )
                 {
                     users[sockfd].close_conn();
